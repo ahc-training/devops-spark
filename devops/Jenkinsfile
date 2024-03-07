@@ -1,0 +1,98 @@
+pipeline {
+    agent {
+        kubernetes {
+            inheritFrom 'docker-image-pod'
+            defaultContainer 'buildkit'
+            yaml """
+                apiVersion: v1
+                kind: Pod
+                metadata:
+                  label:
+                    jenkins: docker-image-pod
+                spec:
+                  containers:
+                    - name: buildkit
+                      image: moby/buildkit:master
+                      tty: true
+                      securityContext:
+                        privileged: true
+                      volumeMounts:
+                        - name: docker-config
+                          mountPath: '/root/.docker'
+                  volumes:
+                    - name: docker-config
+                      secret:
+                        secretName: 'docker-config'
+                  restartPolicy: Never
+            """
+        }
+    }
+
+    parameters {
+        string(
+            name: 'registry',
+            defaultValue: 'registry.example.com:5000',
+            description: 'Container Registry'
+        )
+        string(
+            name: 'base_image_name',
+            defaultValue: 'spark',
+            description: 'Spark Base Image Name'
+        )
+        string(
+            name: 'pyspark_image_name',
+            defaultValue: 'pyspark',
+            description: 'PySpark Base Image Name'
+        )
+        string(
+            name: 'custom_image_name',
+            defaultValue: 'custom-pyspark',
+            description: 'exm PySpark Image Name'
+        )
+        string(
+            name: 'spark_version',
+            defaultValue: 'v3.5.1',
+            description: 'Spark version'
+        )
+    }
+    
+    stages {
+        stage('Download spark application') {
+            steps {
+                sh """
+                    wget -O - https://dlcdn.apache.org/spark/spark-3.5.1/spark-3.5.1-bin-hadoop3-scala2.13.tgz | tar -xvz -C ./
+                """
+            }
+        }
+        stage('Spark base image: build & push') {
+            steps {
+                container('buildkit') {
+                    sh """
+                        cd ./spark-3.5.1-bin-hadoop3-scala2.13
+                        buildctl build --frontend dockerfile.v0 --local context=. --local dockerfile=./kubernetes/dockerfiles/spark --no-cache --output type=image,name=${params.registry}/${params.base_image_name}:${params.spark_version},push=true
+                    """
+                 }
+            }
+        }
+        stage('Spark image for python: build & push') {
+            steps {
+                container('buildkit') {
+                    sh """
+                        cd ./spark-3.5.1-bin-hadoop3-scala2.13
+                        buildctl build --frontend dockerfile.v0 --local context=. --local dockerfile=./kubernetes/dockerfiles/spark/bindings/python --no-cache --opt build-arg:base_img=${params.registry}/${params.base_image_name}:${params.spark_version} --output type=image,name=${params.registry}/${params.pyspark_image_name}:${params.spark_version},push=true
+                    """
+                 }
+            }
+        }
+        stage('Custom pyspark image') {
+            steps {
+                container('buildkit') {
+                    sh """
+                        buildctl build --frontend dockerfile.v0 --local context=. --local dockerfile=./custom --opt build-arg:BASE_IMG=${params.registry}/${params.pyspark_image_name}:${params.spark_version} --no-cache --output type=image,\\"name=${params.registry}/${params.custom_image_name}:${params.spark_version}-${BUILD_NUMBER},${params.registry}/${params.custom_image_name}:latest\\",push=true
+                    """
+                 }
+            }
+        }
+    }
+}
+

@@ -1,0 +1,13 @@
+httpx==0.25.2
+avro == 1.11.3
+delta-spark == 3.0.0
+apache-sedona == 1.5.1
+# scikit-learn == 1.4.0
+# scikit-build == 0.17.6
+# tensorflow == 2.15.0
+# torch == 2.2.0
+# keras == 2.15.0
+# petastorm == 0.12.1
+# hyperopt == 0.2.7
+# xgboost == 2.0.3
+# horovod == 0.28.1
